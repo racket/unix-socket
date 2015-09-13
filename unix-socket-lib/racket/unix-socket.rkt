@@ -15,8 +15,7 @@ macosx (64):
 (require racket/contract
          (rename-in ffi/unsafe (-> -->))
          ffi/unsafe/define
-         ffi/file
-         unstable/error)
+         ffi/file)
 
 (provide
  (contract-out
@@ -139,8 +138,8 @@ macosx (64):
 
 (define (unix-socket-connect path)
   (unless platform
-    (error* 'unix-socket-connect
-            "unix domain sockets are not supported on this platform"))
+    (error 'unix-socket-connect
+           "unix domain sockets are not supported on this platform"))
 
   (when (path-string? path)
     (security-guard-check-file 'unix-socket-connect path '(read write)))
@@ -151,19 +150,20 @@ macosx (64):
          [socket-fd  (socket AF-UNIX SOCK-STREAM 0)])
     (unless (positive? socket-fd)
       (let ([errno (saved-errno)])
-        (error* 'unix-socket-connect
-                "failed to create socket"
-                "errno" errno
-                '("error" maybe) (strerror_r errno))))
+        (error 'unix-socket-path->bytes
+               (format "failed to create socket\n  errno: ~a~a"
+                       errno (let ([err (strerror_r errno)])
+                               (if err (format "\n  error: ~a" err) ""))))))
 
     (unless (zero? (connect socket-fd sockaddr addrlen))
       (close socket-fd)
       (let ([errno (saved-errno)])
-        (error* 'unix-socket-connect
-                "failed to connect socket"
-                '("path" value) path
-                "errno" errno
-                '("error" maybe) (strerror_r errno))))
+        (error 'unix-socket-path->bytes
+               (format "failed to connect socket\n  path: ~a\n  errno: ~a~a"
+                       ((error-value->string-handler) path (error-print-width))
+                       errno
+                       (let ([err (strerror_r errno)])
+                         (if err (format "\n  error: ~a" err) ""))))))
 
     (with-handlers ([(lambda (e) #t)
                      (lambda (exn)
