@@ -143,22 +143,33 @@ macosx (64):
   (define err (strerror_r errno))
   (if err (format "\n  error: ~a" err) ""))
 
-(define (unix-socket-connect path)
-  (unless platform
-    (error 'unix-socket-connect
-           "unix domain sockets are not supported on this platform"))
+(define (check-platform who)
+  (unless platform 
+    (error who "unix domain sockets are not supported on this platform")))
 
+;; do-make-sockaddr : Symbol Path/String -> (values Sockaddr-Pointer Nat)
+(define (do-make-sockaddr who path)
   (when (path-string? path)
-    (security-guard-check-file 'unix-socket-connect path '(read write)))
+    (security-guard-check-file who path '(read write)))
+  (define path-bytes (unix-socket-path->bytes path))
+  (define sockaddr   (make-sockaddr path-bytes))
+  (define addrlen    (+ (ctype-sizeof _ushort) (bytes-length path-bytes)))
+  (values sockaddr addrlen))
 
-  (let* ([path-bytes (unix-socket-path->bytes path)]
-         [sockaddr   (make-sockaddr path-bytes)]
-         [addrlen    (+ (ctype-sizeof _ushort) (bytes-length path-bytes))]
-         [socket-fd  (socket AF-UNIX SOCK-STREAM 0)])
+;; do-make-socket : Symbol (U 'stream 'seqpacket) -> FD
+(define (do-make-socket who)
+  (let ([socket-fd  (socket AF-UNIX SOCK-STREAM 0)])
     (unless (positive? socket-fd)
       (let ([errno (saved-errno)])
-        (error 'unix-socket-path->bytes "failed to create socket\n  errno: ~a~a"
+        (error who "failed to create socket\n  errno: ~a~a"
                errno (errno-error-line errno))))
+    socket-fd))
+
+;; unix-socket-connect : Path/String -> (values Input-Port Output-Port)
+(define (unix-socket-connect path)
+  (check-platform 'unix-socket-connect)
+  (define-values (sockaddr addrlen) (do-make-sockaddr 'unix-socket-connect path))
+  (let ([socket-fd (do-make-socket 'unix-socket-connect)])
     (unless (zero? (connect socket-fd sockaddr addrlen))
       (close socket-fd)
       (let ([errno (saved-errno)])
@@ -168,4 +179,5 @@ macosx (64):
                      (lambda (exn)
                        (close socket-fd)
                        (raise exn))])
+      ;; Closing both ports closes socket-fd
       (scheme_make_fd_output_port socket-fd 'unix-socket #f #f #t))))
