@@ -42,7 +42,6 @@ macosx (64):
     [else
      #f]))
 
-
 (define unix-socket-available?
   (and platform #t))
 
@@ -140,6 +139,9 @@ macosx (64):
     [(macosx)
      (make-macosx_sockaddr_un (bytes-length path-bytes) AF-UNIX path-bytes)]))
 
+(define (errno-error-line errno)
+  (define err (strerror_r errno))
+  (if err (format "\n  error: ~a" err) ""))
 
 (define (unix-socket-connect path)
   (unless platform
@@ -155,21 +157,13 @@ macosx (64):
          [socket-fd  (socket AF-UNIX SOCK-STREAM 0)])
     (unless (positive? socket-fd)
       (let ([errno (saved-errno)])
-        (error 'unix-socket-path->bytes
-               (format "failed to create socket\n  errno: ~a~a"
-                       errno (let ([err (strerror_r errno)])
-                               (if err (format "\n  error: ~a" err) ""))))))
-
+        (error 'unix-socket-path->bytes "failed to create socket\n  errno: ~a~a"
+               errno (errno-error-line errno))))
     (unless (zero? (connect socket-fd sockaddr addrlen))
       (close socket-fd)
       (let ([errno (saved-errno)])
-        (error 'unix-socket-path->bytes
-               (format "failed to connect socket\n  path: ~a\n  errno: ~a~a"
-                       ((error-value->string-handler) path (error-print-width))
-                       errno
-                       (let ([err (strerror_r errno)])
-                         (if err (format "\n  error: ~a" err) ""))))))
-
+        (error 'unix-socket-path->bytes "failed to connect socket\n  path: ~e\n  errno: ~a~a"
+               path errno (errno-error-line errno))))
     (with-handlers ([(lambda (e) #t)
                      (lambda (exn)
                        (close socket-fd)
