@@ -12,6 +12,11 @@ macosx (64):
   /usr/include/sys/un.h: struct sockaddr_un
 |#
 
+;; TODO:
+;; - manage with custodians
+;; - nonblocking connect
+;; - listener (bind/listen/accept)
+
 (require racket/contract
          (rename-in ffi/unsafe (-> -->))
          ffi/unsafe/define
