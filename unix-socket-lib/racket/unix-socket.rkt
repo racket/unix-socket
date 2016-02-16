@@ -13,12 +13,13 @@ macosx (64):
 |#
 
 ;; TODO:
-;; - manage with custodians
 ;; - nonblocking connect
 ;; - listener (bind/listen/accept)
 
 (require racket/contract
          (rename-in ffi/unsafe (-> -->))
+         ffi/unsafe/atomic
+         ffi/unsafe/custodian
          ffi/unsafe/define
          ffi/file)
 
@@ -156,28 +157,36 @@ macosx (64):
   (define addrlen    (+ (ctype-sizeof _ushort) (bytes-length path-bytes)))
   (values sockaddr addrlen))
 
-;; do-make-socket : Symbol (U 'stream 'seqpacket) -> FD
+;; do-make-socket : Symbol -> (values FD Cust-Reg)
 (define (do-make-socket who)
-  (let ([socket-fd  (socket AF-UNIX SOCK-STREAM 0)])
-    (unless (positive? socket-fd)
-      (let ([errno (saved-errno)])
-        (error who "failed to create socket\n  errno: ~a~a"
-               errno (errno-error-line errno))))
-    socket-fd))
+  (define socket-fd  (socket AF-UNIX SOCK-STREAM 0))
+  (unless (positive? socket-fd)
+    (let ([errno (saved-errno)])
+      (error who "failed to create socket\n  errno: ~a~a"
+             errno (errno-error-line errno))))
+  (values socket-fd (register-custodian-shutdown socket-fd close)))
+
+;; close/unregister : Cust-Reg -> Void
+(define (close/unregister fd reg)
+  (close fd)
+  (unregister-custodian-shutdown fd reg))
 
 ;; unix-socket-connect : Path/String -> (values Input-Port Output-Port)
 (define (unix-socket-connect path)
   (check-platform 'unix-socket-connect)
   (define-values (sockaddr addrlen) (do-make-sockaddr 'unix-socket-connect path))
-  (let ([socket-fd (do-make-socket 'unix-socket-connect)])
-    (unless (zero? (connect socket-fd sockaddr addrlen))
-      (close socket-fd)
-      (let ([errno (saved-errno)])
-        (error 'unix-socket-path->bytes "failed to connect socket\n  path: ~e\n  errno: ~a~a"
-               path errno (errno-error-line errno))))
-    (with-handlers ([(lambda (e) #t)
-                     (lambda (exn)
-                       (close socket-fd)
-                       (raise exn))])
-      ;; Closing both ports closes socket-fd
-      (scheme_make_fd_output_port socket-fd 'unix-socket #f #f #t))))
+  (call-as-atomic
+   (lambda ()
+     (define-values (socket-fd reg) (do-make-socket 'unix-socket-connect))
+     (unless (zero? (connect socket-fd sockaddr addrlen))
+       (close/unregister socket-fd reg)
+       (let ([errno (saved-errno)])
+         (error 'unix-socket-path->bytes "failed to connect socket\n  path: ~e\n  errno: ~a~a"
+                path errno (errno-error-line errno))))
+     (with-handlers ([(lambda (e) #t)
+                      (lambda (exn)
+                        (close/unregister socket-fd reg)
+                        (raise exn))])
+       (begin0 (scheme_make_fd_output_port socket-fd 'unix-socket #f #f #t)
+         ;; Closing the ports closes socket-fd
+         (unregister-custodian-shutdown socket-fd reg))))))
