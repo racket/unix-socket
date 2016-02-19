@@ -111,7 +111,7 @@
               (define-values (in out) (make-socket-ports 'unix-socket-connect socket-fd reg))
               (lambda () (values in out))]
              [(= errno EINPROGRESS) ;; wait and see
-              (define sema (scheme_fd_to_semaphore socket-fd MZFD_CREATE_WRITE))
+              (define sema (scheme_fd_to_semaphore socket-fd MZFD_CREATE_WRITE #t))
               (lambda () ;; called in non-atomic mode!
                 (sync sema)
                 ;; FIXME: check custodian hasn't been shut down?

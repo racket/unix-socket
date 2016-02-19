@@ -146,3 +146,48 @@
 
 (define-libc scheme_fd_to_semaphore
   (_fun _intptr _int _bool -> _racket))
+
+;; ============================================================
+;; Testing
+
+;; The unix socket code is difficult to test completely, because there
+;; are errors/conditions that the kernel may return that are
+;; infeasible to deliberately provoke. So optionally replace certain
+;; system calls here with mock versions just for testing.
+
+;; An alternative would be to use units; that would allow testing with
+;; the mocked system calls without editing the source, but I don't
+;; want the overhead of units :/
+
+(when #f
+  ;; -- mock for connect returning EINPROGRESS
+  (let ([real-connect connect]
+        [real-fd_to_sema scheme_fd_to_semaphore])
+    ;; connecting-fds : hash[nat => #t]
+    (define connecting-fds (make-hash))
+    (set! connect
+          (lambda (s addr len)
+            (define r (real-connect s addr len))
+            (cond [(zero? r)
+                   (hash-set! connecting-fds s #t)
+                   (saved-errno EINPROGRESS)
+                   (eprintf "** mock connect: setting EINPROGRESS\n")
+                   -1]
+                  [else r])))
+    (set! scheme_fd_to_semaphore
+          (lambda (fd kind reg?)
+            (cond [(and (= kind MZFD_CREATE_WRITE)
+                        (hash-ref connecting-fds fd #f))
+                   (define sema (make-semaphore))
+                   (eprintf "** mock fd_to_sema: creating semaphore\n")
+                   (thread (lambda ()
+                             (sleep 1)
+                             (eprintf "** mock fd_to_sema: posting to semaphore\n")
+                             (semaphore-post sema)))
+                   (hash-remove! connecting-fds fd)
+                   sema]
+                  [else
+                   (real-fd_to_sema fd kind reg?)])))))
+
+;; TODO:
+;; - mock for accept returning EWOULDBLOCK/EAGAIN
