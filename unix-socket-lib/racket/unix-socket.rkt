@@ -169,7 +169,6 @@
        (close/unregister socket-fd reg)
        (error 'unix-socket-listen "failed to listen\n  path: ~e~a"
               path (errno-error-lines (saved-errno))))
-     (set-fd-nonblocking 'unix-socket-listen socket-fd) ;; FIXME: set earlier?
      (unix-socket-listener socket-fd
                            (make-custodian-box (current-custodian) reg)
                            (make-semaphore 0)))))
