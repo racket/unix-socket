@@ -48,3 +48,35 @@ socket namespace. Example: @racket[#"\0mysocket"].}
 
 Otherwise, returns @racket[#f].
 }
+
+@defproc[(unix-socket-listen [socket-path unix-socket-path?]
+                             [backlog exact-nonnegative-integer? 4])
+         unix-socket-listener?]{
+
+Listen for connections on a unix domain socket bound to
+@racket[socket-path], returning a listener that can be used to accept
+incoming connections.
+
+If @racket[socket-path] refers to a filesystem path, binding the
+socket creates a file that must be deleted separately from closing the
+listener.
+}
+
+@defproc[(unix-socket-listener? [v any/c]) boolean?]{
+
+Returns @racket[#t] if @racket[v] is a unix socket listener created
+with @racket[unix-socket-listen]; @racket[#f] otherwise.
+
+A unix socket listener acts as a synchronizable event. It is ready
+when a client connection is ready to be accepted (see
+@racket[unix-socket-accept]), and its synchronization result is the
+listener itself.
+}
+
+@defproc[(unix-socket-accept [listener unix-socket-listener?])
+         (values input-port? output-port)]{
+
+Accepts a client connection for @racket[listener]. If no client
+connection is waiting to be accepted, the call to
+@racket[unix-socket-accept] will block.
+}
