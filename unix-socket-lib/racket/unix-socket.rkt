@@ -64,7 +64,7 @@
     (error who "failed to create socket~a"
            (errno-error-lines (saved-errno))))
   (set-fd-nonblocking who socket-fd)
-  (values socket-fd (register-custodian-shutdown socket-fd close)))
+  (values socket-fd (register-custodian-shutdown socket-fd close/unregister)))
 
 ;; set-fd-nonblocking : Symbol Nat -> Void
 (define (set-fd-nonblocking who fd)
@@ -74,8 +74,9 @@
            (errno-error-lines (saved-errno)))))
 
 ;; close/unregister : Nat Cust-Reg/#f -> Void
-(define (close/unregister fd reg)
+(define (close/unregister fd [reg #f])
   (close fd)
+  (scheme_fd_to_semaphore fd MZFD_REMOVE #t)
   (when reg (unregister-custodian-shutdown fd reg)))
 
 ;; make-socket-ports : Symbol FD Cust-Reg/#f -> (values Input-Port Output-Port)

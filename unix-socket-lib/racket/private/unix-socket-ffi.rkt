@@ -140,9 +140,15 @@
 
 (define MZFD_CREATE_READ 1)
 (define MZFD_CREATE_WRITE 2)
+(define MZFD_REMOVE 5)
 
 (define-libc scheme_make_fd_output_port
   (_fun _int _racket _bool _bool _bool -> _racket))
+
+(define-libc scheme_socket_to_ports
+  (_fun _intptr _string _bool (in : (_ptr o _racket)) (out : (_ptr o _racket))
+        -> _void
+        -> (values in out)))
 
 (define-libc scheme_fd_to_semaphore
   (_fun _intptr _int _bool -> _racket))
