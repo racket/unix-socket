@@ -195,5 +195,32 @@
                   [else
                    (real-fd_to_sema fd kind reg?)])))))
 
-;; TODO:
-;; - mock for accept returning EWOULDBLOCK/EAGAIN
+(when #f
+  ;; - mock for accept returning EWOULDBLOCK/EAGAIN
+  (let ([real-accept accept]
+        [real-fd_to_sema scheme_fd_to_semaphore])
+    ;; accepting-fds : hash[nat => #t]
+    (define accepting-fds (make-hash))
+    (set! accept
+          (lambda (s)
+            (cond [(hash-ref accepting-fds s #f)
+                   (hash-remove! accepting-fds s)
+                   (real-accept s)]
+                  [else
+                   (eprintf "** mock accept: setting EWOULDBLOCK\n")
+                   (hash-set! accepting-fds s #t)
+                   (saved-errno EWOULDBLOCK)
+                   -1])))
+    (set! scheme_fd_to_semaphore
+          (lambda (fd kind reg?)
+            (cond [(and (= kind MZFD_CREATE_READ)
+                        (hash-ref accepting-fds fd #f))
+                   (define sema (make-semaphore))
+                   (eprintf "** mock fd_to_sema: creating semaphore\n")
+                   (thread (lambda ()
+                             (sleep 1)
+                             (eprintf "** mock fd_to_sema: posting to semaphore\n")
+                             (semaphore-post sema)))
+                   sema]
+                  [else
+                   (real-fd_to_sema fd kind reg?)])))))
