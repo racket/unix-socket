@@ -127,8 +127,35 @@
          (delete-file sockaddr))))))
 
 ;; Test path-based socket
-(combined-test (let ([tmp ((values make-temporary-file))]) (delete-file tmp) tmp))
+(combined-test (make-temp-file-name))
 
 ;; Test Linux abstract name socket
 (when (eq? platform 'linux)
   (combined-test #"\0TestRacketDEF"))
+
+;; ============================================================
+;; Misc
+
+(test-case "unix socket: listener close"
+  (call-in-custodian
+   (lambda ()
+     (define tmp (make-temp-file-name))
+     (define l (unix-socket-listen tmp))
+     (check-eq? (sync/timeout 0.1 l) #f)
+     (thread (lambda () (sleep 1) (unix-socket-close-listener l)))
+     (check-eq? (sync/timeout 2 l) l)
+     (check-exn #rx"listener is closed"
+                (lambda () (unix-socket-accept l)))
+     (when (file-exists? tmp) (delete-file tmp)))))
+
+(test-case "unix socket: listener syncs on custodian shutdown"
+  (call-in-custodian
+   (lambda ()
+     (define tmp (make-temp-file-name))
+     (define l (unix-socket-listen tmp))
+     (check-eq? (sync/timeout 0.1 l) #f)
+     (thread (lambda () (sleep 1) (custodian-shutdown-all (current-custodian))))
+     (check-eq? (sync/timeout 2 l) l)
+     (check-exn #rx"listener is closed"
+                (lambda () (unix-socket-accept l)))
+     (when (file-exists? tmp) (delete-file tmp)))))
