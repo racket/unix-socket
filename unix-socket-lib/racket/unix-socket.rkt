@@ -141,7 +141,6 @@
 ;; If fd is #f or reg-box contains #f, then listener is considered closed.
 (struct unix-socket-listener (fd reg-box sema)
   #:mutable
-  #:transparent
   #:property prop:evt (lambda (self)
                         ;; ready when fd is readable OR if custodian is closed OR listener is closed
                         (call-as-atomic
