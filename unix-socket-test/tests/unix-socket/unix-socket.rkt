@@ -1,7 +1,8 @@
 #lang racket
 (require racket/port
          rackunit
-         racket/unix-socket)
+         racket/unix-socket
+         (only-in racket/private/unix-socket-ffi platform))
 
 (define (call-in-custodian proc)
   (parameterize ((current-subprocess-custodian-mode 'kill))
@@ -41,14 +42,24 @@
     (cond [(input-port? port) (close-input-port port)]
           [(output-port? port) (close-output-port port)])))
 
-;; Test path-based socket
+(define (make-temp-file-name)
+  (define tmp ((values make-temporary-file)))
+  (delete-file tmp)
+  tmp)
 
-(cond
- [(and unix-socket-available? netcat)
-  (test-case "unix socket"
+(unless unix-socket-available?
+  (error "cannot test unix sockets; not supported"))
+
+;; ============================================================
+;; connect tests
+
+;; Test path-based socket
+(test-case "unix socket : connect w/ netcat"
+  (unless netcat
+    (printf "skipping connect w/ netcat; netcat not found\n"))
+  (when netcat
     ;; Uses netcat to create a simple unix domain socket server
-    (define tmp ((values make-temporary-file)))
-    (delete-file tmp)
+    (define tmp (make-temp-file-name))
     (call-in-custodian
      (lambda ()
        (define-values (ncprocess ncout ncin ncerr)
@@ -64,18 +75,13 @@
        (or (sync/timeout 1 ncprocess)
            (subprocess-kill ncprocess))
        ))
-    (when (file-exists? tmp) (delete-file tmp)))]
- [else
-  (printf "cannot test unix sockets: ~a\n"
-          (if netcat
-              "unix sockets not supported"
-              "netcat not found"))])
+    (when (file-exists? tmp) (delete-file tmp))))
 
 ;; Test Linux abstract name socket
-
-(cond
- [(and unix-socket-available? socat)
-  (test-case "unix socket w/ abstract name"
+(test-case "unix socket w/ socat, abstract namespace"
+  (unless socat
+    (printf "skipping connect w/ socat, abstract namespace; socat not found"))
+  (when (and socat (eq? platform 'linux))
     ;; Uses socat to create a simple unix domain socket server
     (call-in-custodian
      (lambda ()
@@ -93,6 +99,36 @@
        (or (sync/timeout 1 ncprocess)
            (subprocess-kill ncprocess))
        (void)
-       )))]
- [(not socat)
-  (printf "cannot test unix sockets w/ abstract namespace: socat not found\n")])
+       ))))
+
+;; ============================================================
+;; combined connect and listen/accept tests
+
+(define (combined-test sockaddr)
+  (test-case (format "unix socket: listen/connect/accept at ~e" sockaddr)
+    (call-in-custodian
+     (lambda ()
+       (define l (unix-socket-listen sockaddr))
+       (check-eq? (sync/timeout 0.1 l) #f)
+       (define-values (cin cout) (unix-socket-connect sockaddr))
+       (check-eq? (sync/timeout 0.1 l) l)
+       (define-values (ain aout) (unix-socket-accept l))
+       (check-eq? (sync/timeout 0.1 l) #f)
+       (check-comm #"hello" cout ain)
+       (check-comm #"wow you sound a lot closer now" aout cin)
+       (check-comm #"that's because\nwe're in\nthe same process!" cout ain)
+       (check-comm #"ttfn" aout cin)
+       (close-ports cout aout)
+       ;; FIXME: input ports block, rather than eof, after output ports closed
+       ;; (check-eq? (read-byte cin) eof)
+       ;; (check-eq? (read-byte ain) eof)
+       (close-ports cin ain)
+       (when (and (path? sockaddr) (file-exists? sockaddr))
+         (delete-file sockaddr))))))
+
+;; Test path-based socket
+(combined-test (let ([tmp ((values make-temporary-file))]) (delete-file tmp) tmp))
+
+;; Test Linux abstract name socket
+(when (eq? platform 'linux)
+  (combined-test #"\0TestRacketDEF"))
