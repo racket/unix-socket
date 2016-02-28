@@ -85,10 +85,34 @@
                    (lambda (exn)
                      (close/unregister socket-fd reg)
                      (raise exn))])
-    (begin0 (scheme_make_fd_output_port socket-fd 'unix-socket #f #f #t)
-      ;; closing the ports closes socket-fd, so custodian no longer needs to manage directly
-      (when reg (unregister-custodian-shutdown socket-fd reg)))))
+    (define-values (in out) (scheme_make_fd_output_port socket-fd 'unix-socket #f #f #t))
+    ;; closing the ports closes socket-fd, so custodian no longer needs to manage directly
+    (when reg (unregister-custodian-shutdown socket-fd reg))
+    (values in (wrap-output-port out socket-fd))))
 
+;; wrap-output-port : Output-Port FD -> Output-Port
+;; Wrap port, override close to shutdown write side of socket.
+(define (wrap-output-port out socket-fd)
+  (define fd-cbox (make-custodian-box (current-custodian) socket-fd))
+  (define (close)
+    (close-output-port out)
+    (start-atomic)
+    (let ([socket-fd (and fd-cbox (custodian-box-value fd-cbox))])
+      (when socket-fd
+        (define result (shutdown socket-fd SHUT_WR))
+        (set! fd-cbox #f)
+        (unless (zero? result)
+          (error 'close-output-port/unix-socket
+                 "error from shutdown~a" (errno-error-lines (saved-errno))))))
+    (end-atomic))
+  (define (get-write-evt buf start end) (write-bytes-avail-evt buf out start end))
+  (define (get-location) (port-next-location out))
+  (define (count-lines!) (port-count-lines! out))
+  (define buffer-mode
+    (case-lambda [() (file-stream-buffer-mode out)]
+            [(mode) (file-stream-buffer-mode out mode)]))
+  (make-output-port 'unix-socket out out close #f get-write-evt #f
+                    get-location count-lines! 1 buffer-mode))
 
 ;; ============================================================
 ;; Connect

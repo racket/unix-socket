@@ -118,10 +118,13 @@
        (check-comm #"wow you sound a lot closer now" aout cin)
        (check-comm #"that's because\nwe're in\nthe same process!" cout ain)
        (check-comm #"ttfn" aout cin)
-       (close-ports cout aout)
-       ;; FIXME: input ports block, rather than eof, after output ports closed
-       ;; (check-eq? (read-byte cin) eof)
-       ;; (check-eq? (read-byte ain) eof)
+       (close-ports cout)  ;; shutdown client output
+       (check-eq? (sync/timeout 0.1 ain) ain "server is ready to read eof")
+       (check-eq? (read-byte ain) eof)
+       (check-comm #"but server can still talk!" aout cin)
+       (close-ports aout) ;; shutdown server output
+       (check-eq? (sync/timeout 0.1 cin) cin "client is ready to read eof")
+       (check-eq? (read-byte cin) eof)
        (close-ports cin ain)
        (when (and (path? sockaddr) (file-exists? sockaddr))
          (delete-file sockaddr))))))

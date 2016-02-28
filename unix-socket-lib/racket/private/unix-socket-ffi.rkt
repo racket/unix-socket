@@ -26,6 +26,9 @@
 (define AF-UNIX 1)
 (define SOCK-STREAM 1)
 
+;; linux: sys/socket.h; bsd/macosx: sys/socket.h
+(define SHUT_WR 1)
+
 ;; linux: asm-generic/{errno-base,errno}.h; bsd/macosx: sys/errno.h
 (define EINTR           4)
 (define EAGAIN          (case platform [(linux) 11]  [(bsd) 35]))
@@ -101,6 +104,10 @@
 (define-libc close
   (_fun #:save-errno 'posix
         _int -> _int))
+
+(define-libc shutdown
+  (_fun #:save-errno 'posix
+        _int _int -> _int))
 
 (define-libc fcntl
   (_fun #:save-errno 'posix
