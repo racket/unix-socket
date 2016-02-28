@@ -4,16 +4,17 @@
          ffi/unsafe/define)
 (provide (protect-out (all-defined-out)))
 
-;; platform : (U 'macosx 'linux #f)
-;; Data structures and error handling code differs between the platforms.
+;; platform : (U 'bsd 'linux #f)
+;; Data structures and constants differ between platforms.
+;; Mac OS X and the BSDs I tried seem to have consistent definitions.
 (define platform
-  (cond
-    [(eq? (system-type 'os) 'macosx)
-     'macosx]
-    [(regexp-match? #rx"^Linux" (system-type 'machine))
-     'linux]
-    [else
-     #f]))
+  (case (system-type 'os)
+    [(macosx) 'bsd]
+    [(unix)
+     (cond [(regexp-match? #rx"^Linux" (system-type 'machine)) 'linux]
+           [(regexp-match? #rx"^[a-zA-Z]*BSD" (system-type 'machine)) 'bsd]
+           [else #f])]
+    [else #f]))
 
 (define unix-socket-available?
   (and platform #t))
@@ -21,38 +22,38 @@
 ;; ========================================
 ;; Constants
 
-;; linux: bits/socket.h; macosx: sys/socket.h
+;; linux: bits/socket.h; bsd/macosx: sys/socket.h
 (define AF-UNIX 1)
 (define SOCK-STREAM 1)
 
-;; linux: asm-generic/{errno-base,errno}.h; macosx: sys/errno.h
+;; linux: asm-generic/{errno-base,errno}.h; bsd/macosx: sys/errno.h
 (define EINTR           4)
-(define EAGAIN          (case platform [(linux) 11]  [(macosx) 35]))
+(define EAGAIN          (case platform [(linux) 11]  [(bsd) 35]))
 (define EWOULDBLOCK     EAGAIN)
-(define EINPROGRESS     (case platform [(linux) 115] [(macosx) 36]))
+(define EINPROGRESS     (case platform [(linux) 115] [(bsd) 36]))
 
-;; linux: asm-generic/fcntl.h; macosx: sys/fcntl.h
+;; linux: asm-generic/fcntl.h; bsd/macosx: sys/fcntl.h
 (define F_SETFL         4)
-(define O_NONBLOCK      (case platform [(linux) #o4000] [(macosx) 4]))
+(define O_NONBLOCK      (case platform [(linux) #o4000] [(bsd) 4]))
 
-;; linux: asm-generic/socket.h; macosx: sys/socket.h
-(define SOL_SOCKET      (case platform [(linux) 1] [(macosx) #xFFFF]))
-(define SO_ERROR        (case platform [(linux) 4] [(macosx) #x1007]))
+;; linux: asm-generic/socket.h; bsd/macosx: sys/socket.h
+(define SOL_SOCKET      (case platform [(linux) 1] [(bsd) #xFFFF]))
+(define SO_ERROR        (case platform [(linux) 4] [(bsd) #x1007]))
 
-;; linux: sys/un.h; macosx: sys/un.h
-(define UNIX-PATH-MAX   (case platform [(linux) 108] [else    104]))
+;; linux: sys/un.h; bsd/macosx: sys/un.h
+(define UNIX-PATH-MAX   (case platform [(linux) 108] [else 104]))
 
-;; linux: bits/sockaddr.h; macosx: sys/un.h
-(define _sa_family (case platform [(linux) _ushort] [(macosx) _ubyte]))
+;; linux: bits/sockaddr.h; bsd/macosx: sys/un.h
+(define _sa_family (case platform [(linux) _ushort] [(bsd) _ubyte]))
 
-;; linux: bits/types.h; macosx: i386/_types.h
-(define _socklen_t (case platform [(linux) _uint] [else    _uint32]))
+;; linux: bits/types.h; bsd/macosx: i386/_types.h
+(define _socklen_t (case platform [(linux) _uint] [else _uint32]))
 
 (define-cstruct _linux_sockaddr_un
   ([sun_family _sa_family]
    [sun_path   (make-array-type _byte UNIX-PATH-MAX)]))
 
-(define-cstruct _macosx_sockaddr_un
+(define-cstruct _bsd_sockaddr_un
   ([sun_len    _ubyte]
    [sun_family _sa_family]
    [sun_path   (make-array-type _byte UNIX-PATH-MAX)]))
@@ -60,15 +61,15 @@
 (define _sockaddr_un-pointer
   (case platform
     [(linux)  _linux_sockaddr_un-pointer]
-    [(macosx) _macosx_sockaddr_un-pointer]
+    [(bsd) _bsd_sockaddr_un-pointer]
     [else     _pointer]))
 
 (define (make-sockaddr path-bytes)
   (case platform
     [(linux)
      (make-linux_sockaddr_un AF-UNIX path-bytes)]
-    [(macosx)
-     (make-macosx_sockaddr_un (bytes-length path-bytes) AF-UNIX path-bytes)]))
+    [(bsd)
+     (make-bsd_sockaddr_un (bytes-length path-bytes) AF-UNIX path-bytes)]))
 
 ;; ========================================
 ;; System functions
