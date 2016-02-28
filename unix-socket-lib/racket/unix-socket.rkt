@@ -88,31 +88,46 @@
     (define-values (in out) (scheme_make_fd_output_port socket-fd 'unix-socket #f #f #t))
     ;; closing the ports closes socket-fd, so custodian no longer needs to manage directly
     (when reg (unregister-custodian-shutdown socket-fd reg))
-    (values in (wrap-output-port out socket-fd))))
+    (define fd+ports (list socket-fd in out))
+    (values (wrap-input-port in fd+ports) (wrap-output-port out fd+ports))))
 
-;; wrap-output-port : Output-Port FD -> Output-Port
+;; wrap-output-port : Output-Port (List FD Port Port) -> Output-Port
 ;; Wrap port, override close to shutdown write side of socket.
-(define (wrap-output-port out socket-fd)
-  (define fd-cbox (make-custodian-box (current-custodian) socket-fd))
+(define (wrap-output-port out fd+ports)
   (define (close)
     (close-output-port out)
-    (start-atomic)
-    (let ([socket-fd (and fd-cbox (custodian-box-value fd-cbox))])
-      (when socket-fd
-        (define result (shutdown socket-fd SHUT_WR))
-        (set! fd-cbox #f)
-        (unless (zero? result)
-          (error 'close-output-port/unix-socket
-                 "error from shutdown~a" (errno-error-lines (saved-errno))))))
-    (end-atomic))
+    (call-as-atomic (lambda () (when fd+ports (do-shutdown fd+ports #t) (set! fd+ports #f)))))
   (define (get-write-evt buf start end) (write-bytes-avail-evt buf out start end))
-  (define (get-location) (port-next-location out))
-  (define (count-lines!) (port-count-lines! out))
-  (define buffer-mode
-    (case-lambda [() (file-stream-buffer-mode out)]
-            [(mode) (file-stream-buffer-mode out mode)]))
-  (make-output-port 'unix-socket out out close #f get-write-evt #f
-                    get-location count-lines! 1 buffer-mode))
+  (define buffer-mode (make-buffer-mode-fun out))
+  (make-output-port 'unix-socket out out close #f get-write-evt #f #f void 1 buffer-mode))
+
+;; wrap-input-port : Input-Port (List FD Port Port) -> Input-Port
+(define (wrap-input-port in fd+ports)
+  (define (close)
+    (close-input-port in)
+    (call-as-atomic (lambda () (when fd+ports (do-shutdown fd+ports #f) (set! fd+ports #f)))))
+  (define (get-progress-evt) (port-progress-evt in))
+  (define (commit k progress done) (port-commit-peeked k progress done in))
+  (define buffer-mode (make-buffer-mode-fun in))
+  (make-input-port 'unix-socket in in close get-progress-evt commit #f void 1 buffer-mode))
+
+(define (make-buffer-mode-fun port)
+  (case-lambda [() (file-stream-buffer-mode port)]
+          [(mode) (file-stream-buffer-mode port mode)]))
+
+;; do-shutdown : (List FD Port Port) Boolean -> Void
+;; Requirements:
+;; - want to shutdown RD/WR when corresponding port closed
+;; - want to shutdown *after* port closed to avoid low-level errors
+;; - must *not* call shutdown after *both* ports closed (fd is stale)
+;; So: okay to call shutdown if either of the ports is still open.
+(define (do-shutdown fd+ports output?)
+  (define socket-fd (car fd+ports))
+  (define ports (cdr fd+ports))
+  (unless (andmap port-closed? ports)
+    (unless (zero? (shutdown socket-fd (if output? SHUT_WR SHUT_RD)))
+      (error (if output? 'close-output-port/unix-socket 'close-input-port/unix-socket)
+             "error from shutdown~a" (errno-error-lines (saved-errno))))))
 
 ;; ============================================================
 ;; Connect

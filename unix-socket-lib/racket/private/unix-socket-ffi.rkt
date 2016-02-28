@@ -27,6 +27,7 @@
 (define SOCK-STREAM 1)
 
 ;; linux: sys/socket.h; bsd/macosx: sys/socket.h
+(define SHUT_RD 0)
 (define SHUT_WR 1)
 
 ;; linux: asm-generic/{errno-base,errno}.h; bsd/macosx: sys/errno.h
