@@ -48,10 +48,10 @@
 (define UNIX-PATH-MAX   (case platform [(linux) 108] [else 104]))
 
 ;; linux: bits/sockaddr.h; bsd/macosx: sys/un.h
-(define _sa_family (case platform [(linux) _ushort] [(bsd) _ubyte]))
+(define _sa_family (case platform [(linux) _ushort] [else _ubyte]))
 
 ;; linux: bits/types.h; bsd/macosx: i386/_types.h
-(define _socklen_t (case platform [(linux) _uint] [else _uint32]))
+(define _socklen_t _uint32)
 
 (define-cstruct _linux_sockaddr_un
   ([sun_family _sa_family]
