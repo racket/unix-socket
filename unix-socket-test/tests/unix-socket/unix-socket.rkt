@@ -164,3 +164,21 @@
      (check-exn #rx"listener is closed"
                 (lambda () (unix-socket-accept l)))
      (when (file-exists? tmp) (delete-file tmp)))))
+
+(test-case "unix socket: custodian shutdown closes ports"
+  (call-in-custodian
+   (lambda ()
+     (define tmp (make-temp-file-name))
+     (define l (unix-socket-listen tmp))
+     (define cust (make-custodian))
+     (define-values (in out)
+       (parameterize ((current-custodian cust))
+         (unix-socket-connect tmp)))
+     (define-values (ain aout) (unix-socket-accept l))
+     (write-bytes #"buffering check check 1 2 3" out)
+     (custodian-shutdown-all cust)
+     (check-true (port-closed? in))
+     (check-true (port-closed? out))
+     (check-eq? (sync/timeout 0.1 ain) ain)
+     (check-eq? (read-byte ain) eof)
+     (when (file-exists? tmp) (delete-file tmp)))))

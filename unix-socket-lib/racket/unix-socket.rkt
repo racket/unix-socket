@@ -95,21 +95,33 @@
 ;; Wrap port, override close to shutdown write side of socket.
 (define (wrap-output-port out fd+ports)
   (define (close)
-    (close-output-port out)
-    (call-as-atomic (lambda () (when fd+ports (do-shutdown fd+ports #t) (set! fd+ports #f)))))
+    (when out (close-output-port out)) ;; may block, so avoid in custodian shutdown
+    (call-as-atomic
+     (lambda ()
+       (when creg (unregister-custodian-shutdown out* creg) (set! creg #f))
+       (when fd+ports (do-shutdown fd+ports #t) (set! fd+ports #f)))))
   (define (get-write-evt buf start end) (write-bytes-avail-evt buf out start end))
   (define buffer-mode (make-buffer-mode-fun out))
-  (make-output-port 'unix-socket out out close #f get-write-evt #f #f void 1 buffer-mode))
+  (define out*
+    (make-output-port 'unix-socket out out close #f get-write-evt #f #f void 1 buffer-mode))
+  (define creg (register-custodian-shutdown out* (lambda (p) (set! out #f) (close-output-port p))))
+  out*)
 
 ;; wrap-input-port : Input-Port (List FD Port Port) -> Input-Port
 (define (wrap-input-port in fd+ports)
   (define (close)
-    (close-input-port in)
-    (call-as-atomic (lambda () (when fd+ports (do-shutdown fd+ports #f) (set! fd+ports #f)))))
+    (when in (close-input-port in))
+    (call-as-atomic
+     (lambda ()
+       (when creg (unregister-custodian-shutdown in* creg) (set! creg #f))
+       (when fd+ports (do-shutdown fd+ports #f) (set! fd+ports #f)))))
   (define (get-progress-evt) (port-progress-evt in))
   (define (commit k progress done) (port-commit-peeked k progress done in))
   (define buffer-mode (make-buffer-mode-fun in))
-  (make-input-port 'unix-socket in in close get-progress-evt commit #f void 1 buffer-mode))
+  (define in*
+    (make-input-port 'unix-socket in in close get-progress-evt commit #f void 1 buffer-mode))
+  (define creg (register-custodian-shutdown in* (lambda (p) (set! in #f) (close-input-port p))))
+  in*)
 
 (define (make-buffer-mode-fun port)
   (case-lambda [() (file-stream-buffer-mode port)]
