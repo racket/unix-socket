@@ -80,7 +80,7 @@
 ;; Test Linux abstract name socket
 (test-case "unix socket w/ socat, abstract namespace"
   (unless socat
-    (printf "skipping connect w/ socat, abstract namespace; socat not found"))
+    (printf "skipping connect w/ socat, abstract namespace; socat not found\n"))
   (when (and socat (eq? platform 'linux))
     ;; Uses socat to create a simple unix domain socket server
     (call-in-custodian
@@ -165,6 +165,18 @@
                 (lambda () (unix-socket-accept l)))
      (when (file-exists? tmp) (delete-file tmp)))))
 
+(test-case "unix socket: close disconnected ports okay"
+  (call-in-custodian
+   (lambda ()
+     (define tmp (make-temp-file-name))
+     (define l (unix-socket-listen tmp))
+     (define-values (in out) (unix-socket-connect tmp))
+     (define-values (ain aout) (unix-socket-accept l))
+     (close-ports ain aout) (sleep 0.1)
+     ;; in/out fd is now in disconnected state
+     (close-ports in out)
+     (when (file-exists? tmp) (delete-file tmp)))))
+
 (test-case "unix socket: custodian shutdown closes ports"
   (call-in-custodian
    (lambda ()
@@ -180,5 +192,5 @@
      (check-true (port-closed? in))
      (check-true (port-closed? out))
      (check-eq? (sync/timeout 0.1 ain) ain)
-     (check-eq? (read-byte ain) eof)
+     (check member (read-char ain) (list #\b eof))
      (when (file-exists? tmp) (delete-file tmp)))))

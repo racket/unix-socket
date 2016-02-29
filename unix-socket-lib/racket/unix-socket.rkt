@@ -138,8 +138,10 @@
   (define ports (cdr fd+ports))
   (unless (andmap port-closed? ports)
     (unless (zero? (shutdown socket-fd (if output? SHUT_WR SHUT_RD)))
-      (error (if output? 'close-output-port/unix-socket 'close-input-port/unix-socket)
-             "error from shutdown~a" (errno-error-lines (saved-errno))))))
+      ;; ENOTCONN is okay; the other side may have disconnected.
+      (unless (= (saved-errno) ENOTCONN)
+        (error (if output? 'close-output-port/unix-socket 'close-input-port/unix-socket)
+               "error from shutdown~a" (errno-error-lines (saved-errno)))))))
 
 ;; ============================================================
 ;; Connect

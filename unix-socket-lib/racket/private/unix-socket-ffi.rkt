@@ -35,6 +35,7 @@
 (define EAGAIN          (case platform [(linux) 11]  [(bsd) 35]))
 (define EWOULDBLOCK     EAGAIN)
 (define EINPROGRESS     (case platform [(linux) 115] [(bsd) 36]))
+(define ENOTCONN        (case platform [(linux) 107] [(bsd) 57]))
 
 ;; linux: asm-generic/fcntl.h; bsd/macosx: sys/fcntl.h
 (define F_SETFL         4)
