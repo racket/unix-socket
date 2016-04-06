@@ -11,8 +11,12 @@
   (case (system-type 'os)
     [(macosx) 'bsd]
     [(unix)
-     (cond [(regexp-match? #rx"^Linux" (system-type 'machine)) 'linux]
-           [(regexp-match? #rx"^[a-zA-Z]*BSD" (system-type 'machine)) 'bsd]
+     (define machine
+       ;; security guard may prevent executing uname
+       (with-handlers ([exn:fail? (lambda (e) "unknown")])
+         (system-type 'machine)))
+     (cond [(regexp-match? #rx"^Linux" machine) 'linux]
+           [(regexp-match? #rx"^[a-zA-Z]*BSD" machine) 'bsd]
            [else #f])]
     [else #f]))
 
