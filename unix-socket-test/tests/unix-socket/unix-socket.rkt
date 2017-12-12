@@ -194,3 +194,38 @@
      (check-eq? (sync/timeout 0.1 ain) ain)
      (check member (read-char ain) (list #\b eof))
      (when (file-exists? tmp) (delete-file tmp)))))
+
+(test-case "accept-evt wakes up"
+  (call-in-custodian
+   (lambda ()
+     (define tmp (make-temp-file-name))
+     (define l (unix-socket-listen tmp))
+     (define go-sema (make-semaphore 0))
+     (define conn-thd
+       (thread
+        (lambda ()
+          (sync go-sema)
+          (sleep 0.5)
+          (define-values (in out) (unix-socket-connect tmp))
+          (close-input-port in)
+          (close-output-port out))))
+     (semaphore-post go-sema)
+     (check-pred list? (sync (unix-socket-accept-evt l)))
+     (when (file-exists? tmp) (delete-file tmp)))))
+
+(test-case "accept-evt wakes up on custodian shutdown"
+  (call-in-custodian
+   (lambda ()
+     (define tmp (make-temp-file-name))
+     (define c2 (make-custodian))
+     (define l (parameterize ((current-custodian c2)) (unix-socket-listen tmp)))
+     (define ae (parameterize ((current-custodian c2)) (unix-socket-accept-evt l)))
+     (define chan (make-channel))
+     (thread (lambda ()
+               (with-handlers ([void (lambda (e) (channel-put chan 'exn) (void))])
+                 (channel-put chan 'ready)
+                 (sync ae)
+                 (channel-put chan 'no-exn))))
+     (check-equal? (channel-get chan) 'ready)
+     (custodian-shutdown-all c2)
+     (check-equal? (channel-get chan) 'exn))))

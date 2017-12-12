@@ -5,6 +5,7 @@
          ffi/unsafe/atomic
          ffi/unsafe/custodian
          ffi/unsafe/define
+         ffi/unsafe/schedule
          ffi/file
          "private/unix-socket-ffi.rkt")
 (provide unix-socket-available?
@@ -19,7 +20,9 @@
           [unix-socket-close-listener
            (-> unix-socket-listener? any)]
           [unix-socket-accept
-           (-> unix-socket-listener? (values input-port? output-port?))]))
+           (-> unix-socket-listener? (values input-port? output-port?))]
+          [unix-socket-accept-evt
+           (-> unix-socket-listener? evt?)]))
 
 (define (unix-socket-path? v)
   (and (unix-socket-path->bytes v) #t))
@@ -246,29 +249,56 @@
     (close/unregister fd)
     (semaphore-post (unix-socket-listener-sema l))))
 
+;; ----------------------------------------
+
+(struct accept-evt (who listener cust) ;; <: (Evt-of (-> (list Input-Port Output-Port)))
+  #:property prop:evt
+  (unsafe-poller (lambda (self maybe-wakeups) (accept-poll self maybe-wakeups))))
+
 ;; unix-socket-accept : Unix-Socket-Listener -> (values Input-Port Output-Port)
 (define (unix-socket-accept l)
-  (sync l)
-  (define accept-k
-    (call-as-atomic
-     (lambda ()
-       (define lfd (listener-fd/check-open 'unix-socket-accept l))
-       (define fd (accept lfd))
-       (cond [(< fd 0)
-              (let ([errno (saved-errno)])
-                (cond [(or (= errno EAGAIN) (= errno EWOULDBLOCK) (= errno EINTR))
-                       (lambda () ;; called in non-atomic mode
-                         (unix-socket-accept l))]
-                      [else
-                       (error 'unix-socket-accept "failed to accept socket~a"
-                              (errno-error-lines errno))]))]
-             [else
-              ;; (set-fd-nonblocking 'unix-socket-accept fd) ;; Needed?
-              (define-values (in out) (make-socket-ports 'unix-socket-accept fd #f))
-              (lambda () (values in out))]))))
-  (accept-k))
+  (apply values ((sync (accept-evt 'unix-socket-accept l (current-custodian))))))
 
-(define (listener-fd/check-open who l)
-  (define fd (unix-socket-listener-fd l))
-  (unless fd (error who "unix socket listener is closed"))
-  fd)
+;; unix-socket-accept-evt : Unix-Socket-Listener -> (Evt-of (list Input-Port Output-Port))
+(define (unix-socket-accept-evt l)
+  (wrap-evt (accept-evt 'unix-socket-accept-evt l (current-custodian)) (lambda (r) (r))))
+
+;; accept-poll : Accept-Evt (U #f Wakeups) -> (U (values List #f) (values #f Evt))
+(define (accept-poll accept-evt maybe-wakeups)
+  (define l (accept-evt-listener accept-evt))
+  (define who (accept-evt-who accept-evt))
+  (define lfd (unix-socket-listener-fd l))
+  (cond [lfd
+         (cond [maybe-wakeups (accept-poll/sleep who accept-evt maybe-wakeups lfd)]
+               [else (accept-poll/check who accept-evt lfd)])]
+        [else
+         (values (list (lambda () (error who "unix socket listener is closed")))
+                 #f)]))
+
+(define (accept-poll/sleep who accept-evt wakeups lfd)
+  ;; No need to register wakeup for custodian; if custodian is shut down, then
+  ;; lfd semaphore becomes ready when it is unregistered
+  (unsafe-poll-ctx-fd-wakeup wakeups lfd 'read)
+  (values #f accept-evt))
+
+(define (accept-poll/check who accept-evt lfd)
+  (define fd (accept lfd))
+  (cond [(< fd 0)
+         (let ([errno (saved-errno)])
+           (cond [(or (= errno EAGAIN) (= errno EWOULDBLOCK) (= errno EINTR))
+                  (values #f accept-evt)]
+                 [else
+                  (values (list (lambda ()
+                                  (error who "failed to accept socket~a"
+                                         (errno-error-lines errno))))
+                          #f)]))]
+        [else
+         (define cust (accept-evt-cust accept-evt))
+         ;; FIXME: what if cust is already shut down? (answer: Segmentation fault!)
+         (define r
+           (with-handlers ([(lambda (e) #t)
+                            (lambda (e) (lambda () (raise e)))])
+             (parameterize ((current-custodian cust))
+               (define-values (in out) (make-socket-ports who fd #f))
+               (lambda () (list in out)))))
+         (values (list r) #f)]))
