@@ -6,6 +6,7 @@
          ffi/unsafe/custodian
          ffi/unsafe/define
          ffi/unsafe/schedule
+         ffi/unsafe/port
          ffi/file
          "private/unix-socket-ffi.rkt")
 (provide unix-socket-available?
@@ -79,7 +80,7 @@
 ;; close/unregister : Nat Cust-Reg/#f -> Void
 (define (close/unregister fd [reg #f])
   (close fd)
-  (scheme_fd_to_semaphore fd MZFD_REMOVE #t)
+  (socket->semaphore fd 'remove)
   (when reg (unregister-custodian-shutdown fd reg)))
 
 ;; make-socket-ports : Symbol FD Cust-Reg/#f -> (values Input-Port Output-Port)
@@ -88,7 +89,8 @@
                    (lambda (exn)
                      (close/unregister socket-fd reg)
                      (raise exn))])
-    (define-values (in out) (scheme_make_fd_output_port socket-fd 'unix-socket #f #f #t))
+    (define-values (in out)
+      (unsafe-file-descriptor->port socket-fd #"unix-socket-port" '(read write)))
     ;; closing the ports closes socket-fd, so custodian no longer needs to manage directly
     (when reg (unregister-custodian-shutdown socket-fd reg))
     (define fd+ports (list socket-fd in out))
@@ -168,7 +170,7 @@
               (define-values (in out) (make-socket-ports 'unix-socket-connect socket-fd reg))
               (lambda () (values in out))]
              [(= errno EINPROGRESS) ;; wait and see
-              (define sema (scheme_fd_to_semaphore socket-fd MZFD_CREATE_WRITE #t))
+              (define sema (socket->semaphore socket-fd 'write))
               (lambda () ;; called in non-atomic mode!
                 (sync sema)
                 ;; FIXME: check custodian hasn't been shut down?
@@ -192,27 +194,25 @@
 ;; ============================================================
 ;; Listen & Accept
 
-;; A Listener is (unix-socket-listener Nat/#f Cust-Reg/#f Semaphore)
+;; A Listener is (unix-socket-listener Nat/#f Cust-Reg/#f)
 ;; States:
-;;   OPEN:   (unix-socket-listener Nat Cust-Reg Semaphore[0])
-;;   CLOSED: (unix-socket-listener #f #f Semaphore[1])
+;;   OPEN:   (unix-socket-listener Nat Cust-Reg)
+;;   CLOSED: (unix-socket-listener #f #f)
 ;; Only transition allowed is OPEN to CLOSED, must happen atomically.
-(struct unix-socket-listener (fd reg sema)
+(struct unix-socket-listener (fd reg)
   #:mutable
   #:property prop:evt
   (lambda (self)
-    ;; ready when fd is readable OR listener is closed
     (call-as-atomic
      (lambda ()
        (wrap-evt
-        (choice-evt
-         ;; ready when fd is readable
-         (cond [(unix-socket-listener-fd self)
-                => (lambda (fd) (scheme_fd_to_semaphore fd MZFD_CREATE_READ #t))]
-               [else never-evt])
-         ;; or when listener is closed
-         (semaphore-peek-evt (unix-socket-listener-sema self)))
-        (lambda (evt) self))))))
+        ;; ready when fd is readable OR listener is closed
+        ;; If closed after evt creation, then fd-sema becomes ready
+        ;; when fd closed and fd-sema unregistered.
+        (cond [(unix-socket-listener-fd self)
+               => (lambda (fd) (socket->semaphore fd 'read))]
+              [else always-evt])
+        (lambda (r) self))))))
 
 ;; unix-socket-listen : Path/String [Nat] -> Unix-Socket-Listener
 (define (unix-socket-listen path [backlog 4])
@@ -229,7 +229,7 @@
        (close/unregister socket-fd reg)
        (error 'unix-socket-listen "failed to listen\n  path: ~e~a"
               path (errno-error-lines (saved-errno))))
-     (define listener (unix-socket-listener socket-fd #f (make-semaphore 0)))
+     (define listener (unix-socket-listener socket-fd #f))
      (set-unix-socket-listener-reg! listener
        (register-custodian-shutdown listener do-close-listener))
      (unregister-custodian-shutdown socket-fd reg)
@@ -247,7 +247,7 @@
     (set-unix-socket-listener-reg! l #f)
     (when unregister? (unregister-custodian-shutdown l reg))
     (close/unregister fd)
-    (semaphore-post (unix-socket-listener-sema l))))
+    (void)))
 
 ;; ----------------------------------------
 

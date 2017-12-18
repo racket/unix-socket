@@ -229,3 +229,17 @@
      (check-equal? (channel-get chan) 'ready)
      (custodian-shutdown-all c2)
      (check-equal? (channel-get chan) 'exn))))
+
+#|
+;; Disabled, currently causes segfault
+(test-case "accept-evt in shutdown custodian"
+  (call-in-custodian
+   (lambda ()
+     (define tmp (make-temp-file-name))
+     (define l (unix-socket-listen tmp))
+     (define c2 (make-custodian))
+     (define ae (parameterize ((current-custodian c2)) (unix-socket-accept-evt l)))
+     (custodian-shutdown-all c2)
+     (thread (lambda () (unix-socket-connect tmp)))
+     (sync ae))))
+|#
