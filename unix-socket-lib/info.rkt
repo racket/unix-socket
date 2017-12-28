@@ -2,5 +2,5 @@
 
 (define collection 'multi)
 (define version "1.2")
-(define deps '(("base" #:version "6.11.0.4")))
+(define deps '(("base" #:version "6.11.0.5")))
 (define pkg-authors '(ryanc))

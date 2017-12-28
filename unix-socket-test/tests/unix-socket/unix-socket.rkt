@@ -230,8 +230,6 @@
      (custodian-shutdown-all c2)
      (check-equal? (channel-get chan) 'exn))))
 
-#|
-;; Disabled, currently causes segfault
 (test-case "accept-evt in shutdown custodian"
   (call-in-custodian
    (lambda ()
@@ -241,5 +239,5 @@
      (define ae (parameterize ((current-custodian c2)) (unix-socket-accept-evt l)))
      (custodian-shutdown-all c2)
      (thread (lambda () (unix-socket-connect tmp)))
-     (sync ae))))
-|#
+     (check-exn #rx"the custodian has been shut down"
+                (lambda () (sync ae))))))

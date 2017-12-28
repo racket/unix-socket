@@ -163,6 +163,8 @@
     ;; whatever needs doing.
     (call-as-atomic
      (lambda ()
+       (when (custodian-shut-down? (current-custodian))
+         (error 'unix-socket-connect "the custodian has been shut down"))
        (define-values (socket-fd reg) (do-make-socket 'unix-socket-connect))
        (define r (connect socket-fd sockaddr addrlen))
        (define errno (saved-errno))
@@ -268,12 +270,14 @@
   (define l (accept-evt-listener accept-evt))
   (define who (accept-evt-who accept-evt))
   (define lfd (unix-socket-listener-fd l))
-  (cond [lfd
-         (cond [maybe-wakeups (accept-poll/sleep who accept-evt maybe-wakeups lfd)]
-               [else (accept-poll/check who accept-evt lfd)])]
-        [else
+  (cond [(eq? lfd #f)
          (values (list (lambda () (error who "unix socket listener is closed")))
-                 #f)]))
+                 #f)]
+        [(custodian-shut-down? (accept-evt-cust accept-evt))
+         (error '|unix-socket-accept-evt poll| "the custodian has been shut down")]
+        [lfd
+         (cond [maybe-wakeups (accept-poll/sleep who accept-evt maybe-wakeups lfd)]
+               [else (accept-poll/check who accept-evt lfd)])]))
 
 (define (accept-poll/sleep who accept-evt wakeups lfd)
   ;; No need to register wakeup for custodian; if custodian is shut down, then
@@ -294,7 +298,6 @@
                           #f)]))]
         [else
          (define cust (accept-evt-cust accept-evt))
-         ;; FIXME: what if cust is already shut down? (answer: Segmentation fault!)
          (define r
            (with-handlers ([(lambda (e) #t)
                             (lambda (e) (lambda () (raise e)))])
