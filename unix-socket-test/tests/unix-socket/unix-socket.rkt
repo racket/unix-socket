@@ -73,7 +73,7 @@
        (close-ports to-sock from-sock)
        (close-ports ncin ncout ncerr)
        (or (sync/timeout 1 ncprocess)
-           (subprocess-kill ncprocess))
+           (subprocess-kill ncprocess #t))
        ))
     (when (file-exists? tmp) (delete-file tmp))))
 
@@ -97,7 +97,7 @@
        (close-ports to-sock from-sock)
        (close-ports ncin ncout ncerr)
        (or (sync/timeout 1 ncprocess)
-           (subprocess-kill ncprocess))
+           (subprocess-kill ncprocess #t))
        (void)
        ))))
 
