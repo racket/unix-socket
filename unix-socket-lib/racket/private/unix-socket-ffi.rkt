@@ -12,12 +12,9 @@
   (case (system-type 'os)
     [(macosx) 'bsd]
     [(unix)
-     (define machine
-       ;; security guard may prevent executing uname
-       (with-handlers ([exn:fail? (lambda (e) "unknown")])
-         (system-type 'machine)))
-     (cond [(regexp-match? #rx"^Linux" machine) 'linux]
-           [(regexp-match? #rx"^[a-zA-Z]*BSD" machine) 'bsd]
+     (define sys (path->string (system-library-subpath #f)))
+     (cond [(regexp-match? #rx"-linux$" sys) 'linux]
+           [(regexp-match? #rx"bsd$" sys) 'bsd]
            [else #f])]
     [else #f]))
 
