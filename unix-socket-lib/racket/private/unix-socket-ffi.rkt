@@ -151,8 +151,8 @@
 ;; Racket constants and functions
 
 ;; indirection to support testing; see below
-(define (socket->semaphore fd mode)
-  (unsafe-socket->semaphore fd mode))
+(define (fd->evt fd mode)
+  (unsafe-fd->evt fd mode #t))
 
 ;; ============================================================
 ;; Testing
@@ -169,7 +169,7 @@
 (when #f
   ;; -- mock for connect returning EINPROGRESS
   (let ([real-connect connect]
-        [real-socket->semaphore socket->semaphore])
+        [real-fd->evt fd->evt])
     ;; connecting-fds : hash[nat => #t]
     (define connecting-fds (make-hash))
     (set! connect
@@ -181,7 +181,7 @@
                    (eprintf "** mock connect: setting EINPROGRESS\n")
                    -1]
                   [else r])))
-    (set! socket->semaphore
+    (set! fd->evt
           (lambda (fd kind)
             (cond [(and (eq? kind 'write)
                         (hash-ref connecting-fds fd #f))
@@ -194,14 +194,14 @@
                    (hash-remove! connecting-fds fd)
                    sema]
                   [else
-                   (real-socket->semaphore fd kind)])))))
+                   (real-fd->evt fd kind)])))))
 
 ;; mock for accept returning EWOULDBLOCK/EAGAIN no longer works,
 ;; probably because doesn't intercept unsafe-poll-ctx-fd-wakeup
 (when #f
   ;; - mock for accept returning EWOULDBLOCK/EAGAIN
   (let ([real-accept accept]
-        [real-socket->semaphore socket->semaphore])
+        [real-fd->evt fd->evt])
     ;; accepting-fds : hash[nat => #t]
     (define accepting-fds (make-hash))
     (set! accept
@@ -214,7 +214,7 @@
                    (hash-set! accepting-fds s #t)
                    (saved-errno EWOULDBLOCK)
                    -1])))
-    (set! socket->semaphore
+    (set! fd->evt
           (lambda (fd kind)
             (cond [(and (eq? kind 'read)
                         (hash-ref accepting-fds fd #f))
@@ -226,4 +226,4 @@
                              (semaphore-post sema)))
                    sema]
                   [else
-                   (real-socket->semaphore fd kind)])))))
+                   (real-fd->evt fd kind)])))))
