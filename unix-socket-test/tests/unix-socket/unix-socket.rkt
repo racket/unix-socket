@@ -1,5 +1,6 @@
-#lang racket
+#lang racket/base
 (require racket/port
+         racket/file
          rackunit
          racket/unix-socket
          (only-in racket/private/unix-socket-ffi platform))
@@ -50,11 +51,16 @@
 (unless unix-socket-available?
   (error "cannot test unix sockets; not supported"))
 
+(define-syntax-rule (test-case* name . body)
+  (let ([name-var name])
+    (printf "testing: ~a\n" name-var)
+    (test-case name-var . body)))
+
 ;; ============================================================
 ;; connect tests
 
 ;; Test path-based socket
-(test-case "unix socket : connect w/ netcat"
+(test-case* "unix socket : connect w/ netcat"
   (unless netcat
     (printf "skipping connect w/ netcat; netcat not found\n"))
   (when netcat
@@ -78,7 +84,7 @@
     (when (file-exists? tmp) (delete-file tmp))))
 
 ;; Test Linux abstract name socket
-(test-case "unix socket w/ socat, abstract namespace"
+(test-case* "unix socket w/ socat, abstract namespace"
   (unless socat
     (printf "skipping connect w/ socat, abstract namespace; socat not found\n"))
   (when (and socat (eq? platform 'linux))
@@ -105,7 +111,7 @@
 ;; combined connect and listen/accept tests
 
 (define (combined-test sockaddr)
-  (test-case (format "unix socket: listen/connect/accept at ~e" sockaddr)
+  (test-case* (format "unix socket: listen/connect/accept at ~e" sockaddr)
     (call-in-custodian
      (lambda ()
        (define l (unix-socket-listen sockaddr))
@@ -141,7 +147,7 @@
 ;; ============================================================
 ;; Misc
 
-(test-case "unix socket: listener close"
+(test-case* "unix socket: listener close"
   (call-in-custodian
    (lambda ()
      (define tmp (make-temp-file-name))
@@ -153,7 +159,7 @@
                 (lambda () (unix-socket-accept l)))
      (when (file-exists? tmp) (delete-file tmp)))))
 
-(test-case "unix socket: listener syncs on custodian shutdown"
+(test-case* "unix socket: listener syncs on custodian shutdown"
   (call-in-custodian
    (lambda ()
      (define tmp (make-temp-file-name))
@@ -165,7 +171,7 @@
                 (lambda () (unix-socket-accept l)))
      (when (file-exists? tmp) (delete-file tmp)))))
 
-(test-case "unix socket: close disconnected ports okay"
+(test-case* "unix socket: close disconnected ports okay"
   (call-in-custodian
    (lambda ()
      (define tmp (make-temp-file-name))
@@ -177,7 +183,7 @@
      (close-ports in out)
      (when (file-exists? tmp) (delete-file tmp)))))
 
-(test-case "unix socket: custodian shutdown closes ports"
+(test-case* "unix socket: custodian shutdown closes ports"
   (call-in-custodian
    (lambda ()
      (define tmp (make-temp-file-name))
@@ -195,7 +201,7 @@
      (check member (read-char ain) (list #\b eof))
      (when (file-exists? tmp) (delete-file tmp)))))
 
-(test-case "accept-evt wakes up"
+(test-case* "accept-evt wakes up"
   (call-in-custodian
    (lambda ()
      (define tmp (make-temp-file-name))
@@ -213,7 +219,7 @@
      (check-pred list? (sync (unix-socket-accept-evt l)))
      (when (file-exists? tmp) (delete-file tmp)))))
 
-(test-case "accept-evt wakes up on custodian shutdown"
+(test-case* "accept-evt wakes up on custodian shutdown"
   (call-in-custodian
    (lambda ()
      (define tmp (make-temp-file-name))
@@ -230,7 +236,7 @@
      (custodian-shutdown-all c2)
      (check-equal? (channel-get chan) 'exn))))
 
-(test-case "accept-evt in shutdown custodian"
+(test-case* "accept-evt in shutdown custodian"
   (call-in-custodian
    (lambda ()
      (define tmp (make-temp-file-name))
