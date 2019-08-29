@@ -276,7 +276,8 @@
          (values (list (lambda () (error who "unix socket listener is closed")))
                  #f)]
         [(custodian-shut-down? (accept-evt-cust accept-evt))
-         (error '|unix-socket-accept-evt poll| "the custodian has been shut down")]
+         (values (list (lambda () (error '|unix-socket-accept-evt poll| "the custodian has been shut down")))
+                 #f)]
         [lfd
          (cond [maybe-wakeups (accept-poll/sleep who accept-evt maybe-wakeups lfd)]
                [else (accept-poll/check who accept-evt lfd)])]))
