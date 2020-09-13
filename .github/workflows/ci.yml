@@ -1,0 +1,23 @@
+on: [push, pull_request]
+name: CI
+jobs:
+  build:
+    name: "Build on Racket '${{ matrix.racket-version }}' (${{ matrix.racket-variant }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        racket-version: ["current"]
+        racket-variant: ["regular", "CS"]
+    steps:
+      - uses: actions/checkout@master
+      - uses: Bogdanp/setup-racket@v0.10
+        with:
+          architecture: x64
+          distribution: full
+          variant: ${{ matrix.racket-variant }}
+          version: ${{ matrix.racket-version }}
+      - run: sudo raco pkg update --link unix-socket-lib/ unix-socket-doc/ unix-socket/
+      - run: sudo raco pkg install unix-socket-test/
+      - run: sudo raco setup --tidy --check-pkg-deps --unused-pkg-deps --pkgs unix-socket-lib unix-socket-test unix-socket-doc unix-socket
+      - run: raco test unix-socket-test/
