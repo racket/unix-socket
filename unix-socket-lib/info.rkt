@@ -1,6 +1,7 @@
 #lang info
 
 (define collection 'multi)
-(define version "1.2")
-(define deps '(("base" #:version "7.9.0.16")))
+(define version "1.3")
+(define deps '(("base" #:version "7.9.0.16")
+               "net-lib"))
 (define pkg-authors '(ryanc))

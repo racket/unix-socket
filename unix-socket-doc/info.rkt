@@ -3,7 +3,11 @@
 (define collection 'multi)
 (define version "1.1")
 (define deps '("base"
-               ["unix-socket-lib" #:version "1.2"]))
+               "net-lib"
+               ["unix-socket-lib" #:version "1.3"]
+               "web-server-lib"))
 (define build-deps '("scribble-lib"
-                     "racket-doc"))
+                     "net-doc"
+                     "racket-doc"
+                     "web-server-doc"))
 (define pkg-authors '(ryanc))

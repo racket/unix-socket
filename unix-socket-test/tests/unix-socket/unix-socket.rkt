@@ -3,17 +3,9 @@
          racket/file
          rackunit
          racket/unix-socket
-         (only-in racket/private/unix-socket-ffi platform))
+         (only-in racket/private/unix-socket-ffi platform)
+         "common.rkt")
 
-(define (call-in-custodian proc)
-  (parameterize ((current-subprocess-custodian-mode 'kill))
-    (parameterize ((current-custodian (make-custodian)))
-      (call-with-continuation-barrier
-       (lambda ()
-         (dynamic-wind void
-                       proc
-                       (lambda ()
-                         (custodian-shutdown-all (current-custodian)))))))))
 
 ;; Commands for creating socket listeners
 ;;  - netcat is commonly available, but cannot use Linux abstract namespace
@@ -43,18 +35,9 @@
     (cond [(input-port? port) (close-input-port port)]
           [(output-port? port) (close-output-port port)])))
 
-(define (make-temp-file-name)
-  (define tmp ((values make-temporary-file)))
-  (delete-file tmp)
-  tmp)
-
 (unless unix-socket-available?
   (error "cannot test unix sockets; not supported"))
 
-(define-syntax-rule (test-case* name . body)
-  (let ([name-var name])
-    (printf "testing: ~a\n" name-var)
-    (test-case name-var . body)))
 
 ;; ============================================================
 ;; connect tests
