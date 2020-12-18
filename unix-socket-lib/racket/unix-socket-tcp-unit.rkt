@@ -19,8 +19,8 @@
       (unix-socket-accept l))
 
     (define (tcp-accept/enable-break l)
-      (parameterize-break #t
-        (unix-socket-accept l)))
+      (apply values (sync/enable-break
+                     (unix-socket-accept-evt l))))
 
     (define (tcp-accept-ready? l)
       (and (sync/timeout 0 l) #t))
