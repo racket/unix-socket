@@ -7,3 +7,6 @@
                      "rackunit-lib"
                      ["unix-socket-lib" #:version "1.3"]))
 (define pkg-authors '(ryanc))
+
+(define license
+  '(Apache-2.0 OR MIT))
