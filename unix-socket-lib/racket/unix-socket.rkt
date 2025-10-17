@@ -64,7 +64,7 @@
 ;; Should be called in atomic mode.
 (define (do-make-socket who)
   (define socket-fd  (socket AF-UNIX SOCK-STREAM 0))
-  (unless (positive? socket-fd)
+  (when (negative? socket-fd)
     (error who "failed to create socket~a"
            (errno-error-lines (saved-errno))))
   (set-fd-nonblocking who socket-fd)
@@ -160,7 +160,7 @@
     ;; Non-blocking connect may succeed immediately or require waiting to see.
     ;; - If succeeds immediately, make ports in same atomic block
     ;; - If wait, must exit atomic mode to sync
-    ;; So we return a procedure to be applied in non-atomic mode that does 
+    ;; So we return a procedure to be applied in non-atomic mode that does
     ;; whatever needs doing.
     (call-as-atomic
      (lambda ()
